@@ -38,7 +38,8 @@ async function ghPushAdditions(json, message) {
   if (getRes.status === 200) {
     sha = (await getRes.json()).sha;
   } else if (getRes.status !== 404) {
-    throw new Error(`GitHub GET failed (${getRes.status})`);
+    const detail = await getRes.json().catch(() => ({}));
+    throw new Error(detail.message || `GitHub GET failed (${getRes.status})`);
   }
 
   const body = { message, content: b64EncodeUnicode(json), branch: GH_BRANCH };
