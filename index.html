@@ -15,7 +15,7 @@
 <body>
 <div id="root"></div>
 <script>
-  fetch("game-night-tracker.jsx")
+  fetch("game-night-tracker.jsx", { cache: "no-store" })
     .then((r) => r.text())
     .then((code) => {
       var out = Babel.transform(code, {
