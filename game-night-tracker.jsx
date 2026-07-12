@@ -597,6 +597,14 @@ function computeBelts(all) {
   return belts;
 }
 
+function lastGameWinner(rows) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const winners = rows[i].winners.filter((w) => w !== "Win" && w !== "Loss");
+    if (winners.length) return { names: winners, game: rows[i].game, date: rows[i].date };
+  }
+  return null;
+}
+
 function Scorepad({ all, years }) {
   const [year, setYear] = React.useState(years[0] || "all");
   const rows = year === "all" ? all : all.filter((r) => r.date.startsWith(year));
@@ -612,7 +620,7 @@ function Scorepad({ all, years }) {
     const b = computeBoard(all).filter((x) => x.played > 0)[0];
     return b ? b.name : null;
   }, [all]);
-  const belts = React.useMemo(() => computeBelts(all), [all]);
+  const champ = React.useMemo(() => lastGameWinner(all), [all]);
 
   // Stable color map: games ranked by all-time wins, top 10 get colors
   const colorFor = React.useMemo(() => {
@@ -659,8 +667,19 @@ function Scorepad({ all, years }) {
       )}
 
       <Card>
-        <div className="display" style={{ fontSize: 15, marginBottom: 12, color: T.red }}>
-          {year === "all" ? "ALL-TIME" : year} SCOREPAD
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+          <div className="display" style={{ fontSize: 15, color: T.red }}>
+            {year === "all" ? "ALL-TIME" : year} SCOREPAD
+          </div>
+          <a
+            href="https://ronacul.github.io/railbaron-tracker/rail-baron-tracker.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open Rail Baron / Boxcars Tracker"
+            style={{ fontSize: 18, textDecoration: "none" }}
+          >
+            🚂
+          </a>
         </div>
         {board.length === 0 && <div style={{ fontSize: 14 }}>No games logged for {year} yet.</div>}
         {board.map((b, i) => (
@@ -669,9 +688,9 @@ function Scorepad({ all, years }) {
               <span style={{ fontWeight: 700, fontSize: 15 }}>
                 {b.name}
                 {b.name === allTimeChampName && <span title="All-time champ" style={{ marginLeft: 5 }}>👑</span>}
-                {belts[b.name] && belts[b.name].length > 0 && (
-                  <span title={`Current belt holder: ${belts[b.name].join(", ")}`} style={{ marginLeft: 5, fontSize: 12 }}>
-                    🥇{belts[b.name].length > 1 ? `×${belts[b.name].length}` : ""}
+                {champ && champ.names.includes(b.name) && (
+                  <span title={`Current champ — won the last game (${champ.game}, ${champ.date})`} style={{ marginLeft: 5 }}>
+                    🥋
                   </span>
                 )}
               </span>
