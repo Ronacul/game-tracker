@@ -277,29 +277,35 @@ function GameNightTracker() {
 
   React.useEffect(() => {
     (async () => {
+      let remote = { additions: [], overrides: {} };
       try {
-        const parsed = await ghFetchAdditions();
-        setAdditions(parsed.additions || []);
-        setOverrides(parsed.overrides || {});
-        setStorageReady(true);
-        return;
+        remote = await ghFetchAdditions();
       } catch (e) {
-        /* fall back to local cache below */
+        /* no published data yet, or offline — local cache below still applies */
       }
+
+      let local = { additions: [], overrides: {} };
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            setAdditions(parsed);
-          } else {
-            setAdditions(parsed.additions || []);
-            setOverrides(parsed.overrides || {});
-          }
+          local = Array.isArray(parsed)
+            ? { additions: parsed, overrides: {} }
+            : { additions: parsed.additions || [], overrides: parsed.overrides || {} };
         }
       } catch (e) {
-        /* no saved games yet */
+        /* no local cache yet */
       }
+
+      // Merge rather than overwrite: anything saved locally but not yet
+      // published (no token, or a failed/pending push) must survive a
+      // reload even after the remote fetch succeeds. Local wins on id
+      // conflicts since it's the most recent edit on this device.
+      const byId = new Map();
+      (remote.additions || []).forEach((r) => byId.set(r.id, r));
+      (local.additions || []).forEach((r) => byId.set(r.id, r));
+      setAdditions([...byId.values()]);
+      setOverrides({ ...(remote.overrides || {}), ...(local.overrides || {}) });
       setStorageReady(true);
     })();
   }, []);
