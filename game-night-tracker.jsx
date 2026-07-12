@@ -11,6 +11,50 @@ function seqOf(r) {
 
 const COOP_GAMES = new Set(["Pandemic"]);
 const STORAGE_KEY = "gamenight-additions-v1";
+const TOKEN_KEY = "gamenight-gh-token";
+const GH_OWNER = "Ronacul";
+const GH_REPO = "game-tracker";
+const GH_BRANCH = "master";
+const GH_DATA_PATH = "additions.json";
+
+function b64EncodeUnicode(str) {
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))));
+}
+
+async function ghFetchAdditions() {
+  const res = await fetch(GH_DATA_PATH, { cache: "no-store" });
+  if (!res.ok) throw new Error("no remote file");
+  return res.json();
+}
+
+async function ghPushAdditions(json, message) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return { ok: false, reason: "no-token" };
+  const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_DATA_PATH}`;
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+
+  const getRes = await fetch(url, { headers });
+  let sha;
+  if (getRes.status === 200) {
+    sha = (await getRes.json()).sha;
+  } else if (getRes.status !== 404) {
+    throw new Error(`GitHub GET failed (${getRes.status})`);
+  }
+
+  const body = { message, content: b64EncodeUnicode(json), branch: GH_BRANCH };
+  if (sha) body.sha = sha;
+
+  const putRes = await fetch(url, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!putRes.ok) {
+    const detail = await putRes.json().catch(() => ({}));
+    throw new Error(detail.message || `GitHub save failed (${putRes.status})`);
+  }
+  return { ok: true };
+}
 
 const T = {
   felt: "#1E3A2C",
@@ -145,6 +189,81 @@ function Chip({ active, onClick, children, small }) {
   );
 }
 
+function SyncSettings({ onClose }) {
+  const [token, setToken] = React.useState(() => localStorage.getItem(TOKEN_KEY) || "");
+  const [saved, setSaved] = React.useState(false);
+  const hasToken = !!localStorage.getItem(TOKEN_KEY);
+
+  function saveToken() {
+    if (token.trim()) {
+      localStorage.setItem(TOKEN_KEY, token.trim());
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  function clearToken() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken("");
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ color: T.red, fontWeight: 700, fontFamily: "'Alfa Slab One', serif", fontSize: 15 }}>
+          SYNC SETTINGS
+        </div>
+        <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.graphiteSoft, fontSize: 18, cursor: "pointer" }}>
+          ×
+        </button>
+      </div>
+
+      <div style={{ fontSize: 13, color: T.graphiteSoft, marginTop: 10, lineHeight: 1.5 }}>
+        Currently: {hasToken ? "✓ configured — saves publish to GitHub automatically" : "not configured — saves stay on this device only"}
+      </div>
+
+      <label>GitHub personal access token</label>
+      <input
+        type="password"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="github_pat_..."
+        autoComplete="off"
+      />
+      <div style={{ fontSize: 12, color: T.graphiteSoft, marginTop: 8, lineHeight: 1.5 }}>
+        Create a fine-grained token at github.com/settings/personal-access-tokens with access limited to just
+        the <code>{GH_OWNER}/{GH_REPO}</code> repo and "Contents: Read and write" permission. It's stored only
+        in this browser (localStorage) and never leaves it except to call GitHub's API directly.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <button
+          onClick={saveToken}
+          style={{
+            flex: 1, padding: 11, borderRadius: 5, border: "none", background: T.red, color: T.cream,
+            fontFamily: "'Alfa Slab One', serif", fontSize: 13, letterSpacing: "0.04em", cursor: "pointer",
+          }}
+        >
+          {saved ? "SAVED ✓" : "SAVE TOKEN"}
+        </button>
+        {hasToken && (
+          <button
+            onClick={clearToken}
+            style={{
+              padding: 11, borderRadius: 5, border: `1.5px solid ${T.line}`, background: "transparent",
+              color: T.graphite, fontSize: 13, cursor: "pointer",
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function GameNightTracker() {
   const [tab, setTab] = React.useState("scorepad");
   const [additions, setAdditions] = React.useState([]);
@@ -152,11 +271,21 @@ function GameNightTracker() {
   const [editing, setEditing] = React.useState(null);
   const [storageReady, setStorageReady] = React.useState(false);
   const [saveMsg, setSaveMsg] = React.useState("");
+  const [showSync, setShowSync] = React.useState(false);
 
   const seedRows = React.useMemo(normalizeSeed, []);
 
   React.useEffect(() => {
     (async () => {
+      try {
+        const parsed = await ghFetchAdditions();
+        setAdditions(parsed.additions || []);
+        setOverrides(parsed.overrides || {});
+        setStorageReady(true);
+        return;
+      } catch (e) {
+        /* fall back to local cache below */
+      }
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
@@ -212,10 +341,24 @@ function GameNightTracker() {
     const ov = nextOverrides ?? overrides;
     setAdditions(add);
     setOverrides(ov);
+    const json = JSON.stringify({ additions: add, overrides: ov }, null, 2);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ additions: add, overrides: ov }));
+      localStorage.setItem(STORAGE_KEY, json);
     } catch (e) {
-      setSaveMsg("Couldn't save — storage unavailable");
+      /* local cache is best-effort */
+    }
+
+    if (!localStorage.getItem(TOKEN_KEY)) {
+      setSaveMsg("Saved on this device only — add a GitHub token in Sync settings to publish it");
+      return;
+    }
+    setSaveMsg("Publishing to GitHub…");
+    try {
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      await ghPushAdditions(json, `Game log update — ${stamp}`);
+      setSaveMsg("Published — live for everyone in about a minute");
+    } catch (e) {
+      setSaveMsg("Saved on this device, but publishing failed: " + e.message);
     }
   }
 
@@ -247,7 +390,17 @@ function GameNightTracker() {
         label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: ${T.creamDim}; display: block; margin: 14px 0 6px; }
       `}</style>
 
-      <header style={{ padding: "20px 16px 12px", textAlign: "center" }}>
+      <header style={{ padding: "20px 16px 12px", textAlign: "center", position: "relative" }}>
+        <button
+          onClick={() => setShowSync((s) => !s)}
+          title="Sync settings"
+          style={{
+            position: "absolute", top: 16, right: 12, background: "transparent", border: "none",
+            color: T.creamDim, fontSize: 18, cursor: "pointer", padding: 6,
+          }}
+        >
+          ⚙
+        </button>
         <div className="display" style={{ fontSize: 26, lineHeight: 1.1, letterSpacing: "0.02em" }}>
           GAME NIGHT
         </div>
@@ -257,6 +410,7 @@ function GameNightTracker() {
       </header>
 
       <main style={{ maxWidth: 560, margin: "0 auto", padding: "0 12px" }}>
+        {showSync && <SyncSettings onClose={() => setShowSync(false)} />}
         {tab === "scorepad" && <Scorepad all={all} years={years} playerNames={playerNames} />}
         {tab === "games" && <GamesTab all={all} />}
         {tab === "history" && (
