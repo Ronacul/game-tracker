@@ -269,6 +269,7 @@ function GameNightTracker() {
   const [tab, setTab] = React.useState("scorepad");
   const [additions, setAdditions] = React.useState([]);
   const [overrides, setOverrides] = React.useState({});
+  const [customGames, setCustomGames] = React.useState([]);
   const [editing, setEditing] = React.useState(null);
   const [storageReady, setStorageReady] = React.useState(false);
   const [saveMsg, setSaveMsg] = React.useState("");
@@ -278,21 +279,21 @@ function GameNightTracker() {
 
   React.useEffect(() => {
     (async () => {
-      let remote = { additions: [], overrides: {} };
+      let remote = { additions: [], overrides: {}, customGames: [] };
       try {
         remote = await ghFetchAdditions();
       } catch (e) {
         /* no published data yet, or offline — local cache below still applies */
       }
 
-      let local = { additions: [], overrides: {} };
+      let local = { additions: [], overrides: {}, customGames: [] };
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
           local = Array.isArray(parsed)
-            ? { additions: parsed, overrides: {} }
-            : { additions: parsed.additions || [], overrides: parsed.overrides || {} };
+            ? { additions: parsed, overrides: {}, customGames: [] }
+            : { additions: parsed.additions || [], overrides: parsed.overrides || {}, customGames: parsed.customGames || [] };
         }
       } catch (e) {
         /* no local cache yet */
@@ -307,6 +308,7 @@ function GameNightTracker() {
       (local.additions || []).forEach((r) => byId.set(r.id, r));
       setAdditions([...byId.values()]);
       setOverrides({ ...(remote.overrides || {}), ...(local.overrides || {}) });
+      setCustomGames([...new Set([...(remote.customGames || []), ...(local.customGames || [])])]);
       setStorageReady(true);
     })();
   }, []);
@@ -335,20 +337,23 @@ function GameNightTracker() {
   const gameNames = React.useMemo(() => {
     const s = new Set(SEED_GAMES);
     additions.forEach((r) => s.add(r.game));
+    customGames.forEach((g) => s.add(g));
     return [...s].sort();
-  }, [additions]);
+  }, [additions, customGames]);
 
   const years = React.useMemo(() => {
     const s = new Set(all.map((r) => r.date.slice(0, 4)));
     return [...s].sort().reverse();
   }, [all]);
 
-  async function persist(nextAdditions, nextOverrides) {
-    const add = nextAdditions ?? additions;
-    const ov = nextOverrides ?? overrides;
+  async function persist(patch) {
+    const add = patch.additions ?? additions;
+    const ov = patch.overrides ?? overrides;
+    const cg = patch.customGames ?? customGames;
     setAdditions(add);
     setOverrides(ov);
-    const json = JSON.stringify({ additions: add, overrides: ov }, null, 2);
+    setCustomGames(cg);
+    const json = JSON.stringify({ additions: add, overrides: ov, customGames: cg }, null, 2);
     try {
       localStorage.setItem(STORAGE_KEY, json);
     } catch (e) {
@@ -419,7 +424,9 @@ function GameNightTracker() {
       <main style={{ maxWidth: 560, margin: "0 auto", padding: "0 12px" }}>
         {showSync && <SyncSettings onClose={() => setShowSync(false)} />}
         {tab === "scorepad" && <Scorepad all={all} years={years} playerNames={playerNames} />}
-        {tab === "games" && <GamesTab all={all} />}
+        {tab === "games" && (
+          <GamesTab all={all} customGames={customGames} additions={additions} persist={persist} />
+        )}
         {tab === "streaks" && <BraggingTab all={all} playerNames={playerNames} />}
         {tab === "history" && (
           <History all={all} additions={additions} overrides={overrides} persist={persist} onEdit={startEdit} />
@@ -711,8 +718,10 @@ function Scorepad({ all, years }) {
   );
 }
 
-function GamesTab({ all }) {
+function GamesTab({ all, customGames, additions, persist }) {
   const [selected, setSelected] = React.useState(null);
+  const [newGame, setNewGame] = React.useState("");
+  const [err, setErr] = React.useState("");
   const byGame = {};
   all.forEach((r) => {
     byGame[r.game] = byGame[r.game] || { n: 0, last: "", wins: {} };
@@ -724,6 +733,9 @@ function GamesTab({ all }) {
       g.wins[w] = (g.wins[w] || 0) + 1;
     });
   });
+  customGames.forEach((name) => {
+    if (!byGame[name]) byGame[name] = { n: 0, last: "", wins: {} };
+  });
   const list = Object.entries(byGame)
     .map(([name, g]) => {
       const champ = Object.entries(g.wins).sort((a, b) => b[1] - a[1])[0];
@@ -731,9 +743,41 @@ function GamesTab({ all }) {
     })
     .sort((a, b) => b.n - a.n);
 
+  const allNames = new Set([...SEED_GAMES, ...additions.map((r) => r.game), ...customGames]);
+
+  async function addGame() {
+    const name = newGame.trim();
+    if (!name) return;
+    if (allNames.has(name)) return setErr("That game's already on the shelf.");
+    setErr("");
+    await persist({ customGames: [...customGames, name] });
+    setNewGame("");
+  }
+
   return (
     <Card>
       <div className="display" style={{ fontSize: 15, marginBottom: 12, color: T.red }}>THE SHELF</div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input
+          value={newGame}
+          onChange={(e) => setNewGame(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addGame()}
+          placeholder="Add a new game to the shelf…"
+          style={{ margin: 0 }}
+        />
+        <button
+          onClick={addGame}
+          style={{
+            padding: "0 16px", borderRadius: 5, border: "none", background: T.red, color: T.cream,
+            fontFamily: "'Alfa Slab One', serif", fontSize: 13, cursor: "pointer",
+          }}
+        >
+          Add
+        </button>
+      </div>
+      {err && <div style={{ color: T.red, fontSize: 12, marginBottom: 10 }}>{err}</div>}
+
       {list.map((g, i) => (
         <div key={g.name} style={{ borderBottom: i < list.length - 1 ? `1px solid ${T.line}` : "none" }}>
           <div
@@ -745,8 +789,7 @@ function GamesTab({ all }) {
               <span className="mono" style={{ fontSize: 12 }}>{g.n}×</span>
             </div>
             <div className="mono" style={{ fontSize: 11, color: T.graphiteSoft, marginTop: 2 }}>
-              last {g.last}
-              {g.champ ? ` · ${g.champ[0]} leads (${g.champ[1]}W)` : " · co-op"}
+              {g.n === 0 ? "never played" : `last ${g.last}${g.champ ? ` · ${g.champ[0]} leads (${g.champ[1]}W)` : " · co-op"}`}
             </div>
           </div>
           {selected === g.name && <GameDetail name={g.name} all={all} />}
@@ -756,6 +799,10 @@ function GamesTab({ all }) {
   );
 }
 
+const EXTERNAL_TRACKERS = {
+  "Rail Baron": "https://ronacul.github.io/railbaron-tracker/rail-baron-tracker.html",
+};
+
 function GameDetail({ name, all }) {
   const rows = all.filter((r) => r.game === name);
   const sorted = [...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(a) - seqOf(b)));
@@ -763,9 +810,23 @@ function GameDetail({ name, all }) {
   const belt = !isCoop && sorted[0] ? sorted[0].winners.filter((w) => w !== "Win" && w !== "Loss") : [];
 
   const board = computeBoard(rows).filter((b) => b.played > 0);
+  const trackerUrl = EXTERNAL_TRACKERS[name];
 
   return (
     <div style={{ padding: "0 0 12px", marginTop: -4 }}>
+      {trackerUrl && (
+        <a
+          href={trackerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-block", marginBottom: 10, padding: "7px 12px", borderRadius: 5,
+            background: T.red, color: T.cream, fontSize: 12, fontWeight: 700, textDecoration: "none",
+          }}
+        >
+          🚂 Open {name} Tracker →
+        </a>
+      )}
       {belt.length > 0 && (
         <div className="mono" style={{ fontSize: 12, color: T.graphiteSoft, marginBottom: 8 }}>
           🥇 Belt holder: {belt.join(", ")} (won {sorted[0].date})
@@ -783,14 +844,21 @@ function GameDetail({ name, all }) {
           ))}
         </div>
       )}
-      <div style={{ fontSize: 11, color: T.graphiteSoft, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
-        Recent plays
-      </div>
-      {sorted.slice(0, 5).map((r) => (
-        <div key={r.id} className="mono" style={{ fontSize: 11, color: T.graphiteSoft, padding: "2px 0" }}>
-          {r.date} — {r.winners.join(", ")}
-        </div>
-      ))}
+      {sorted.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, color: T.graphiteSoft, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+            Recent plays
+          </div>
+          {sorted.slice(0, 5).map((r) => (
+            <div key={r.id} className="mono" style={{ fontSize: 11, color: T.graphiteSoft, padding: "2px 0" }}>
+              {r.date} — {r.winners.join(", ")}
+            </div>
+          ))}
+        </>
+      )}
+      {sorted.length === 0 && (
+        <div style={{ fontSize: 12, color: T.graphiteSoft }}>Not played yet — log it from the +Add tab.</div>
+      )}
     </div>
   );
 }
@@ -815,9 +883,9 @@ function History({ all, additions, overrides, persist, onEdit }) {
 
   async function remove(r) {
     if (r.seed) {
-      await persist(additions, { ...overrides, [r.id]: { ...(overrides[r.id] || {}), __deleted: true } });
+      await persist({ overrides: { ...overrides, [r.id]: { ...(overrides[r.id] || {}), __deleted: true } } });
     } else {
-      await persist(additions.filter((x) => x.id !== r.id));
+      await persist({ additions: additions.filter((x) => x.id !== r.id) });
     }
   }
 
@@ -1077,11 +1145,11 @@ function AddGame({ gameNames, playerNames, additions, overrides, persist, storag
       notes: notes.trim(),
     };
     if (editing && editing.seed) {
-      await persist(additions, { ...overrides, [editing.id]: fields });
+      await persist({ overrides: { ...overrides, [editing.id]: fields } });
     } else if (editing) {
-      await persist(additions.map((r) => (r.id === editing.id ? { ...r, ...fields } : r)));
+      await persist({ additions: additions.map((r) => (r.id === editing.id ? { ...r, ...fields } : r)) });
     } else {
-      await persist([...additions, { id: "add-" + Date.now(), seq: Date.now(), ...fields }]);
+      await persist({ additions: [...additions, { id: "add-" + Date.now(), seq: Date.now(), ...fields }] });
     }
     if (editing) clearEditing();
     setGame(""); setNewGame(""); setWinners([]); setPlayers([]); setCoop(""); setNotes("");
