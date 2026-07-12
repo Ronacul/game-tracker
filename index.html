@@ -14,9 +14,19 @@
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" data-type="module" src="game-night-tracker.jsx"></script>
-<script type="text/babel">
-  ReactDOM.createRoot(document.getElementById("root")).render(<GameNightTracker />);
+<script>
+  fetch("game-night-tracker.jsx")
+    .then((r) => r.text())
+    .then((code) => {
+      var out = Babel.transform(code, {
+        presets: [["react", { runtime: "classic" }]],
+        filename: "game-night-tracker.jsx",
+      }).code;
+      (0, eval)(out);
+      ReactDOM.createRoot(document.getElementById("root")).render(
+        React.createElement(GameNightTracker)
+      );
+    });
 </script>
 </body>
 </html>
