@@ -17,5 +17,20 @@
       "notes": ""
     }
   ],
-  "overrides": {}
+  "overrides": {
+    "seed-668": {
+      "date": "2026-05-15",
+      "game": "Boxcars UK",
+      "winners": [
+        "Mark"
+      ],
+      "players": [
+        "Lucanor",
+        "Dennis",
+        "Mark",
+        "Alistair"
+      ],
+      "notes": ""
+    }
+  }
 }
