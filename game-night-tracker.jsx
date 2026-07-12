@@ -420,6 +420,7 @@ function GameNightTracker() {
         {showSync && <SyncSettings onClose={() => setShowSync(false)} />}
         {tab === "scorepad" && <Scorepad all={all} years={years} playerNames={playerNames} />}
         {tab === "games" && <GamesTab all={all} />}
+        {tab === "streaks" && <BraggingTab all={all} playerNames={playerNames} />}
         {tab === "history" && (
           <History all={all} additions={additions} overrides={overrides} persist={persist} onEdit={startEdit} />
         )}
@@ -453,6 +454,7 @@ function GameNightTracker() {
         {[
           ["scorepad", "Scorepad"],
           ["games", "Games"],
+          ["streaks", "Streaks"],
           ["history", "History"],
           ["add", "+ Add"],
         ].map(([k, label]) => (
@@ -461,15 +463,16 @@ function GameNightTracker() {
             onClick={() => setTab(k)}
             style={{
               flex: 1,
-              padding: "13px 0 15px",
+              padding: "13px 2px 15px",
               background: "transparent",
               border: "none",
               borderTop: tab === k ? `3px solid ${T.red}` : "3px solid transparent",
               color: tab === k ? T.cream : "rgba(244,238,220,0.55)",
               fontFamily: "'Public Sans', sans-serif",
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: 11,
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             {label}
@@ -511,6 +514,82 @@ function currentStreak(rows) {
   return n >= 2 ? { name: last, n } : null;
 }
 
+function longestStreak(rows) {
+  const comp = rows.filter((r) => r.winners.length && r.winners[0] !== "Win" && r.winners[0] !== "Loss");
+  let curName = null, curN = 0, bestName = null, bestN = 0;
+  comp.forEach((r) => {
+    if (curName && r.winners.includes(curName)) curN++;
+    else {
+      curName = r.winners[0];
+      curN = 1;
+    }
+    if (curN > bestN) {
+      bestN = curN;
+      bestName = curName;
+    }
+  });
+  return bestN >= 2 ? { name: bestName, n: bestN } : null;
+}
+
+function currentStreaksByPlayer(rows) {
+  const comp = rows.filter((r) => r.winners.length && r.winners[0] !== "Win" && r.winners[0] !== "Loss");
+  const names = new Set();
+  comp.forEach((r) => r.winners.forEach((w) => names.add(w)));
+  const out = [];
+  names.forEach((name) => {
+    let n = 0;
+    for (let i = comp.length - 1; i >= 0; i--) {
+      if (comp[i].winners.includes(name)) n++;
+      else break;
+    }
+    if (n >= 2) out.push({ name, n });
+  });
+  return out.sort((a, b) => b.n - a.n);
+}
+
+function droughts(rows, playerNames) {
+  const comp = rows.filter((r) => r.winners.length && r.winners[0] !== "Win" && r.winners[0] !== "Loss");
+  return playerNames
+    .map((name) => {
+      let n = 0;
+      for (let i = comp.length - 1; i >= 0; i--) {
+        if (!comp[i].players.includes(name)) continue;
+        if (comp[i].winners.includes(name)) break;
+        n++;
+      }
+      return { name, n };
+    })
+    .filter((d) => d.n > 0)
+    .sort((a, b) => b.n - a.n);
+}
+
+function attendanceBoard(rows, playerNames) {
+  return playerNames
+    .map((name) => ({ name, n: rows.filter((r) => r.players.includes(name)).length }))
+    .filter((a) => a.n > 0)
+    .sort((a, b) => b.n - a.n);
+}
+
+function computeBelts(all) {
+  const lastPlay = {};
+  all.forEach((r) => {
+    if (COOP_GAMES.has(r.game)) return;
+    const prev = lastPlay[r.game];
+    if (!prev || r.date > prev.date || (r.date === prev.date && seqOf(r) > seqOf(prev))) {
+      lastPlay[r.game] = r;
+    }
+  });
+  const belts = {};
+  Object.entries(lastPlay).forEach(([game, r]) => {
+    r.winners.forEach((w) => {
+      if (w === "Win" || w === "Loss") return;
+      belts[w] = belts[w] || [];
+      belts[w].push(game);
+    });
+  });
+  return belts;
+}
+
 function Scorepad({ all, years }) {
   const [year, setYear] = React.useState(years[0] || "all");
   const rows = year === "all" ? all : all.filter((r) => r.date.startsWith(year));
@@ -518,8 +597,15 @@ function Scorepad({ all, years }) {
   const maxWins = board.length ? board[0].wins : 0;
   const useTally = maxWins <= 30;
   const streak = currentStreak(all);
+  const periodBest = longestStreak(rows);
   const coopW = rows.filter((r) => r.winners.includes("Win")).length;
   const coopL = rows.filter((r) => r.winners.includes("Loss")).length;
+
+  const allTimeChampName = React.useMemo(() => {
+    const b = computeBoard(all).filter((x) => x.played > 0)[0];
+    return b ? b.name : null;
+  }, [all]);
+  const belts = React.useMemo(() => computeBelts(all), [all]);
 
   // Stable color map: games ranked by all-time wins, top 10 get colors
   const colorFor = React.useMemo(() => {
@@ -555,8 +641,13 @@ function Scorepad({ all, years }) {
       </div>
 
       {streak && (
-        <div className="mono" style={{ textAlign: "center", fontSize: 12, color: T.creamDim, marginBottom: 12 }}>
+        <div className="mono" style={{ textAlign: "center", fontSize: 12, color: T.creamDim, marginBottom: 4 }}>
           🔥 {streak.name} has won {streak.n} straight
+        </div>
+      )}
+      {periodBest && (
+        <div className="mono" style={{ textAlign: "center", fontSize: 12, color: T.creamDim, marginBottom: 12 }}>
+          🏆 Longest streak {year === "all" ? "all-time" : `in ${year}`}: {periodBest.name}, {periodBest.n} straight
         </div>
       )}
 
@@ -568,7 +659,15 @@ function Scorepad({ all, years }) {
         {board.map((b, i) => (
           <div key={b.name} style={{ padding: "9px 0", borderBottom: i < board.length - 1 ? `1px solid ${T.line}` : "none" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>{b.name}</span>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>
+                {b.name}
+                {b.name === allTimeChampName && <span title="All-time champ" style={{ marginLeft: 5 }}>👑</span>}
+                {belts[b.name] && belts[b.name].length > 0 && (
+                  <span title={`Current belt holder: ${belts[b.name].join(", ")}`} style={{ marginLeft: 5, fontSize: 12 }}>
+                    🥇{belts[b.name].length > 1 ? `×${belts[b.name].length}` : ""}
+                  </span>
+                )}
+              </span>
               <span className="mono" style={{ fontSize: 12, color: T.graphiteSoft }}>
                 {b.wins}W / {b.played}G · {(b.pct * 100).toFixed(0)}%
               </span>
@@ -613,6 +712,7 @@ function Scorepad({ all, years }) {
 }
 
 function GamesTab({ all }) {
+  const [selected, setSelected] = React.useState(null);
   const byGame = {};
   all.forEach((r) => {
     byGame[r.game] = byGame[r.game] || { n: 0, last: "", wins: {} };
@@ -635,18 +735,63 @@ function GamesTab({ all }) {
     <Card>
       <div className="display" style={{ fontSize: 15, marginBottom: 12, color: T.red }}>THE SHELF</div>
       {list.map((g, i) => (
-        <div key={g.name} style={{ padding: "9px 0", borderBottom: i < list.length - 1 ? `1px solid ${T.line}` : "none" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{g.name}</span>
-            <span className="mono" style={{ fontSize: 12 }}>{g.n}×</span>
+        <div key={g.name} style={{ borderBottom: i < list.length - 1 ? `1px solid ${T.line}` : "none" }}>
+          <div
+            onClick={() => setSelected(selected === g.name ? null : g.name)}
+            style={{ padding: "9px 0", cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{g.name}</span>
+              <span className="mono" style={{ fontSize: 12 }}>{g.n}×</span>
+            </div>
+            <div className="mono" style={{ fontSize: 11, color: T.graphiteSoft, marginTop: 2 }}>
+              last {g.last}
+              {g.champ ? ` · ${g.champ[0]} leads (${g.champ[1]}W)` : " · co-op"}
+            </div>
           </div>
-          <div className="mono" style={{ fontSize: 11, color: T.graphiteSoft, marginTop: 2 }}>
-            last {g.last}
-            {g.champ ? ` · ${g.champ[0]} leads (${g.champ[1]}W)` : " · co-op"}
-          </div>
+          {selected === g.name && <GameDetail name={g.name} all={all} />}
         </div>
       ))}
     </Card>
+  );
+}
+
+function GameDetail({ name, all }) {
+  const rows = all.filter((r) => r.game === name);
+  const sorted = [...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(a) - seqOf(b)));
+  const isCoop = COOP_GAMES.has(name);
+  const belt = !isCoop && sorted[0] ? sorted[0].winners.filter((w) => w !== "Win" && w !== "Loss") : [];
+
+  const board = computeBoard(rows).filter((b) => b.played > 0);
+
+  return (
+    <div style={{ padding: "0 0 12px", marginTop: -4 }}>
+      {belt.length > 0 && (
+        <div className="mono" style={{ fontSize: 12, color: T.graphiteSoft, marginBottom: 8 }}>
+          🥇 Belt holder: {belt.join(", ")} (won {sorted[0].date})
+        </div>
+      )}
+      {!isCoop && board.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {board.map((b) => (
+            <div key={b.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+              <span>{b.name}</span>
+              <span className="mono" style={{ color: T.graphiteSoft }}>
+                {b.wins}W / {b.played}G · {(b.pct * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: T.graphiteSoft, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+        Recent plays
+      </div>
+      {sorted.slice(0, 5).map((r) => (
+        <div key={r.id} className="mono" style={{ fontSize: 11, color: T.graphiteSoft, padding: "2px 0" }}>
+          {r.date} — {r.winners.join(", ")}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -809,6 +954,70 @@ function History({ all, additions, overrides, persist, onEdit }) {
           </button>
         )}
       </Card>
+    </div>
+  );
+}
+
+function StatRow({ emoji, name, detail }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0" }}>
+      <span style={{ fontSize: 14 }}>{emoji} {name}</span>
+      <span className="mono" style={{ fontSize: 12, color: T.graphiteSoft }}>{detail}</span>
+    </div>
+  );
+}
+
+function BraggingTab({ all, playerNames }) {
+  const active = currentStreaksByPlayer(all);
+  const record = longestStreak(all);
+  const cold = droughts(all, playerNames);
+  const attendance = attendanceBoard(all, playerNames);
+  const belts = computeBelts(all);
+  const beltEntries = Object.entries(belts).sort((a, b) => b[1].length - a[1].length);
+
+  return (
+    <div>
+      <Card>
+        <div className="display" style={{ fontSize: 15, marginBottom: 10, color: T.red }}>ACTIVE STREAKS</div>
+        {active.length === 0 && <div style={{ fontSize: 13, color: T.graphiteSoft }}>Nobody's on a streak right now.</div>}
+        {active.map((s) => (
+          <StatRow key={s.name} emoji="🔥" name={s.name} detail={`${s.n} straight`} />
+        ))}
+      </Card>
+
+      {record && (
+        <Card style={{ marginTop: 12 }}>
+          <div className="display" style={{ fontSize: 15, marginBottom: 10, color: T.red }}>ALL-TIME RECORD STREAK</div>
+          <StatRow emoji="🏆" name={record.name} detail={`${record.n} straight`} />
+        </Card>
+      )}
+
+      {beltEntries.length > 0 && (
+        <Card style={{ marginTop: 12 }}>
+          <div className="display" style={{ fontSize: 15, marginBottom: 10, color: T.red }}>BELT HOLDERS</div>
+          {beltEntries.map(([name, games]) => (
+            <StatRow key={name} emoji="🥇" name={name} detail={games.join(", ")} />
+          ))}
+        </Card>
+      )}
+
+      {cold.length > 0 && (
+        <Card style={{ marginTop: 12 }}>
+          <div className="display" style={{ fontSize: 15, marginBottom: 10, color: T.red }}>LONGEST DROUGHTS</div>
+          {cold.slice(0, 6).map((d) => (
+            <StatRow key={d.name} emoji="🥶" name={d.name} detail={`${d.n} games since a win`} />
+          ))}
+        </Card>
+      )}
+
+      {attendance.length > 0 && (
+        <Card style={{ marginTop: 12 }}>
+          <div className="display" style={{ fontSize: 15, marginBottom: 10, color: T.red }}>MOST NIGHTS ATTENDED</div>
+          {attendance.slice(0, 6).map((a) => (
+            <StatRow key={a.name} emoji="🎲" name={a.name} detail={`${a.n} games`} />
+          ))}
+        </Card>
+      )}
     </div>
   );
 }
