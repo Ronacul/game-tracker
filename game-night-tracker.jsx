@@ -11,11 +11,39 @@ function seqOf(r) {
 
 const COOP_GAMES = new Set(["Pandemic"]);
 const STORAGE_KEY = "gamenight-additions-v1";
+const SYNC_HISTORY_KEY = "gamenight-synchistory-v1";
 const TOKEN_KEY = "gamenight-gh-token";
 const GH_OWNER = "Ronacul";
 const GH_REPO = "game-tracker";
 const GH_BRANCH = "master";
 const GH_DATA_PATH = "additions.json";
+
+// Game night cutoff: if it's before 5 AM, default to yesterday's date.
+// Game nights run late — logging at 1 AM should still count as that evening's session.
+const GAME_NIGHT_CUTOFF_HOUR = 5;
+
+function gameNightDate() {
+  const now = new Date();
+  if (now.getHours() < GAME_NIGHT_CUTOFF_HOUR) {
+    now.setDate(now.getDate() - 1);
+  }
+  return now.toISOString().slice(0, 10);
+}
+
+function logSync(action, detail) {
+  try {
+    const history = JSON.parse(localStorage.getItem(SYNC_HISTORY_KEY) || "[]");
+    history.unshift({ ts: new Date().toISOString(), action, detail });
+    if (history.length > 30) history.length = 30;
+    localStorage.setItem(SYNC_HISTORY_KEY, JSON.stringify(history));
+  } catch (e) { /* best-effort */ }
+}
+
+function getSyncHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(SYNC_HISTORY_KEY) || "[]");
+  } catch (e) { return []; }
+}
 
 function b64EncodeUnicode(str) {
   return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))));
@@ -190,10 +218,15 @@ function Chip({ active, onClick, children, small }) {
   );
 }
 
-function SyncSettings({ onClose }) {
+function SyncSettings({ onClose, onPull, onPush, additions, overrides }) {
   const [token, setToken] = React.useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [saved, setSaved] = React.useState(false);
+  const [syncMsg, setSyncMsg] = React.useState("");
+  const [syncing, setSyncing] = React.useState(false);
+  const [history, setHistory] = React.useState(() => getSyncHistory());
   const hasToken = !!localStorage.getItem(TOKEN_KEY);
+
+  const pendingCount = additions.length + Object.keys(overrides).length;
 
   function saveToken() {
     if (token.trim()) {
@@ -210,58 +243,168 @@ function SyncSettings({ onClose }) {
     setToken("");
   }
 
+  async function doPull() {
+    setSyncing(true);
+    setSyncMsg("Pulling from GitHub…");
+    try {
+      await onPull();
+      setSyncMsg("✓ Pulled — local data updated from GitHub");
+      logSync("pull", "refreshed from remote");
+      setHistory(getSyncHistory());
+    } catch (e) {
+      setSyncMsg("Pull failed: " + e.message);
+      logSync("pull-fail", e.message);
+      setHistory(getSyncHistory());
+    }
+    setSyncing(false);
+  }
+
+  async function doPush() {
+    setSyncing(true);
+    setSyncMsg("Pushing to GitHub…");
+    try {
+      await onPush();
+      setSyncMsg("✓ Pushed — published to GitHub");
+      setHistory(getSyncHistory());
+    } catch (e) {
+      setSyncMsg("Push failed: " + e.message);
+      setHistory(getSyncHistory());
+    }
+    setSyncing(false);
+  }
+
+  function fmtTs(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " +
+      d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  const actionIcon = { push: "⬆", pull: "⬇", save: "💾", "push-fail": "⬆✗", "pull-fail": "⬇✗" };
+
   return (
-    <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ color: T.red, fontWeight: 700, fontFamily: "'Alfa Slab One', serif", fontSize: 15 }}>
-          SYNC SETTINGS
-        </div>
-        <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.graphiteSoft, fontSize: 18, cursor: "pointer" }}>
-          ×
-        </button>
-      </div>
-
-      <div style={{ fontSize: 13, color: T.graphiteSoft, marginTop: 10, lineHeight: 1.5 }}>
-        Currently: {hasToken ? "✓ configured — saves publish to GitHub automatically" : "not configured — saves stay on this device only"}
-      </div>
-
-      <label>GitHub personal access token</label>
-      <input
-        type="password"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        placeholder="github_pat_..."
-        autoComplete="off"
-      />
-      <div style={{ fontSize: 12, color: T.graphiteSoft, marginTop: 8, lineHeight: 1.5 }}>
-        Create a fine-grained token at github.com/settings/personal-access-tokens with access limited to just
-        the <code>{GH_OWNER}/{GH_REPO}</code> repo and "Contents: Read and write" permission. It's stored only
-        in this browser (localStorage) and never leaves it except to call GitHub's API directly.
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button
-          onClick={saveToken}
-          style={{
-            flex: 1, padding: 11, borderRadius: 5, border: "none", background: T.red, color: T.cream,
-            fontFamily: "'Alfa Slab One', serif", fontSize: 13, letterSpacing: "0.04em", cursor: "pointer",
-          }}
-        >
-          {saved ? "SAVED ✓" : "SAVE TOKEN"}
-        </button>
-        {hasToken && (
-          <button
-            onClick={clearToken}
-            style={{
-              padding: 11, borderRadius: 5, border: `1.5px solid ${T.line}`, background: "transparent",
-              color: T.graphite, fontSize: 13, cursor: "pointer",
-            }}
-          >
-            Clear
+    <div>
+      {/* Sync actions */}
+      <Card style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="display" style={{ color: T.red, fontSize: 15 }}>SYNC</div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.graphiteSoft, fontSize: 18, cursor: "pointer" }}>
+            ×
           </button>
+        </div>
+
+        <div style={{ fontSize: 13, color: T.graphiteSoft, marginTop: 8, lineHeight: 1.5 }}>
+          {hasToken
+            ? `✓ Token configured — ${pendingCount} local change${pendingCount === 1 ? "" : "s"}`
+            : "No token — saves stay on this device only"}
+        </div>
+
+        {hasToken && (
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button
+              onClick={doPull}
+              disabled={syncing}
+              style={{
+                flex: 1, padding: 11, borderRadius: 5, border: `1.5px solid ${T.line}`, background: "transparent",
+                color: syncing ? T.graphiteSoft : T.graphite, fontWeight: 700, fontSize: 13, cursor: syncing ? "default" : "pointer",
+              }}
+            >
+              ⬇ PULL
+            </button>
+            <button
+              onClick={doPush}
+              disabled={syncing}
+              style={{
+                flex: 1, padding: 11, borderRadius: 5, border: "none", background: syncing ? T.graphiteSoft : T.red,
+                color: T.cream, fontFamily: "'Alfa Slab One', serif", fontSize: 13, letterSpacing: "0.04em",
+                cursor: syncing ? "default" : "pointer",
+              }}
+            >
+              ⬆ PUSH
+            </button>
+          </div>
         )}
-      </div>
-    </Card>
+
+        {syncMsg && (
+          <div className="mono" style={{
+            fontSize: 12, marginTop: 10, padding: "8px 10px", borderRadius: 4,
+            border: `1px solid ${T.line}`, color: T.graphite, lineHeight: 1.5,
+          }}>
+            {syncMsg}
+          </div>
+        )}
+      </Card>
+
+      {/* Sync history */}
+      {history.length > 0 && (
+        <Card style={{ marginBottom: 12 }}>
+          <div className="display" style={{ color: T.red, fontSize: 13, marginBottom: 8 }}>SYNC HISTORY</div>
+          {history.slice(0, 1).map((h, i) => (
+            <div key={i} className="mono" style={{ fontSize: 12, color: T.graphite, padding: "4px 0" }}>
+              {actionIcon[h.action] || "•"} {h.action} · {fmtTs(h.ts)} — {h.detail}
+            </div>
+          ))}
+          {history.length > 1 && (
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ fontSize: 11, color: T.graphiteSoft, cursor: "pointer" }}>
+                Older entries ({history.length - 1})
+              </summary>
+              {history.slice(1).map((h, i) => (
+                <div key={i} className="mono" style={{ fontSize: 11, color: T.graphiteSoft, padding: "3px 0" }}>
+                  {actionIcon[h.action] || "•"} {h.action} · {fmtTs(h.ts)} — {h.detail}
+                </div>
+              ))}
+            </details>
+          )}
+        </Card>
+      )}
+
+      {/* Token settings — collapsed by default */}
+      <Card>
+        <details>
+          <summary style={{ fontWeight: 700, fontSize: 13, color: T.graphite, cursor: "pointer" }}>
+            Token Settings {hasToken ? "✓" : ""}
+          </summary>
+          <div style={{ marginTop: 10 }}>
+            <label>GitHub personal access token</label>
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="github_pat_..."
+              autoComplete="off"
+            />
+            <div style={{ fontSize: 12, color: T.graphiteSoft, marginTop: 8, lineHeight: 1.5 }}>
+              Create a fine-grained token at github.com/settings/personal-access-tokens with access limited to just
+              the <code>{GH_OWNER}/{GH_REPO}</code> repo and "Contents: Read and write" permission. It's stored only
+              in this browser (localStorage) and never leaves it except to call GitHub's API directly.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button
+                onClick={saveToken}
+                style={{
+                  flex: 1, padding: 11, borderRadius: 5, border: "none", background: T.red, color: T.cream,
+                  fontFamily: "'Alfa Slab One', serif", fontSize: 13, letterSpacing: "0.04em", cursor: "pointer",
+                }}
+              >
+                {saved ? "SAVED ✓" : "SAVE TOKEN"}
+              </button>
+              {hasToken && (
+                <button
+                  onClick={clearToken}
+                  style={{
+                    padding: 11, borderRadius: 5, border: `1.5px solid ${T.line}`, background: "transparent",
+                    color: T.graphite, fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        </details>
+      </Card>
+    </div>
   );
 }
 
@@ -346,7 +489,7 @@ function GameNightTracker() {
     return [...s].sort().reverse();
   }, [all]);
 
-  async function persist(patch) {
+  async function persist(patch, syncNote) {
     const add = patch.additions ?? additions;
     const ov = patch.overrides ?? overrides;
     const cg = patch.customGames ?? customGames;
@@ -361,17 +504,44 @@ function GameNightTracker() {
     }
 
     if (!localStorage.getItem(TOKEN_KEY)) {
-      setSaveMsg("Saved on this device only — add a GitHub token in Sync settings to publish it");
+      setSaveMsg("Saved on this device only — add a GitHub token in ⚙ to publish");
+      logSync("save", "local only — " + (syncNote || `${add.length} additions`));
       return;
     }
     setSaveMsg("Publishing to GitHub…");
     try {
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const detail = syncNote || `${add.length} additions, ${Object.keys(ov).length} edits`;
       await ghPushAdditions(json, `Game log update — ${stamp}`);
-      setSaveMsg("Published — live for everyone in about a minute");
+      setSaveMsg("Published ✓ — live for everyone in about a minute");
+      logSync("push", detail);
     } catch (e) {
       setSaveMsg("Saved on this device, but publishing failed: " + e.message);
+      logSync("push-fail", e.message);
     }
+  }
+
+  async function pullFromGitHub() {
+    const remote = await ghFetchAdditions();
+    const remoteAdd = remote.additions || [];
+    const remoteOv = remote.overrides || {};
+    const remoteCg = remote.customGames || [];
+
+    // Merge: remote is truth, but keep local-only additions not yet pushed
+    const remoteIds = new Set(remoteAdd.map((r) => r.id));
+    const localOnly = additions.filter((r) => !remoteIds.has(r.id));
+    const merged = [...remoteAdd, ...localOnly];
+
+    setAdditions(merged);
+    setOverrides({ ...remoteOv, ...overrides });
+    setCustomGames([...new Set([...remoteCg, ...customGames])]);
+
+    const json = JSON.stringify({
+      additions: merged,
+      overrides: { ...remoteOv, ...overrides },
+      customGames: [...new Set([...remoteCg, ...customGames])],
+    }, null, 2);
+    try { localStorage.setItem(STORAGE_KEY, json); } catch (e) { /* best-effort */ }
   }
 
   function startEdit(entry) {
@@ -422,7 +592,15 @@ function GameNightTracker() {
       </header>
 
       <main style={{ maxWidth: 560, margin: "0 auto", padding: "0 12px" }}>
-        {showSync && <SyncSettings onClose={() => setShowSync(false)} />}
+        {showSync && (
+          <SyncSettings
+            onClose={() => setShowSync(false)}
+            onPull={pullFromGitHub}
+            onPush={() => persist({}, "manual push")}
+            additions={additions}
+            overrides={overrides}
+          />
+        )}
         {tab === "scorepad" && <Scorepad all={all} years={years} playerNames={playerNames} />}
         {tab === "games" && (
           <GamesTab all={all} customGames={customGames} additions={additions} persist={persist} />
@@ -1110,8 +1288,8 @@ function BraggingTab({ all, playerNames }) {
 }
 
 function AddGame({ gameNames, playerNames, additions, overrides, persist, storageReady, saveMsg, editing, clearEditing, onSaved }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = React.useState(today);
+  const tonight = gameNightDate();
+  const [date, setDate] = React.useState(tonight);
   const [game, setGame] = React.useState("");
   const [newGame, setNewGame] = React.useState("");
   const [winners, setWinners] = React.useState([]);
@@ -1181,7 +1359,7 @@ function AddGame({ gameNames, playerNames, additions, overrides, persist, storag
         <div className="display" style={{ fontSize: 15, color: T.red }}>{editing ? "EDIT ENTRY" : "LOG A GAME"}</div>
         {editing && (
           <button
-            onClick={() => { clearEditing(); setGame(""); setNewGame(""); setWinners([]); setPlayers([]); setCoop(""); setNotes(""); setDate(today); }}
+            onClick={() => { clearEditing(); setGame(""); setNewGame(""); setWinners([]); setPlayers([]); setCoop(""); setNotes(""); setDate(tonight); }}
             style={{ border: "none", background: "transparent", color: T.graphiteSoft, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
           >
             cancel
@@ -1192,6 +1370,11 @@ function AddGame({ gameNames, playerNames, additions, overrides, persist, storag
 
       <label style={{ color: T.graphiteSoft }}>Date</label>
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      {new Date().getHours() < GAME_NIGHT_CUTOFF_HOUR && (
+        <div className="mono" style={{ fontSize: 11, color: T.creamDim, marginTop: 4, opacity: 0.8 }}>
+          🌙 After midnight — date set to tonight's session ({new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })})
+        </div>
+      )}
 
       <label style={{ color: T.graphiteSoft }}>Game</label>
       <select value={game} onChange={(e) => setGame(e.target.value)}>
