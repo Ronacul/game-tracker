@@ -442,16 +442,14 @@ function GameNightTracker() {
         /* no local cache yet */
       }
 
-      // Merge rather than overwrite: anything saved locally but not yet
-      // published (no token, or a failed/pending push) must survive a
-      // reload even after the remote fetch succeeds. Local wins on id
-      // conflicts since it's the most recent edit on this device.
-      const byId = new Map();
-      (remote.additions || []).forEach((r) => byId.set(r.id, r));
-      (local.additions || []).forEach((r) => byId.set(r.id, r));
-      setAdditions([...byId.values()]);
-      setOverrides({ ...(remote.overrides || {}), ...(local.overrides || {}) });
-      setCustomGames([...new Set([...(remote.customGames || []), ...(local.customGames || [])])]);
+      // Remote is the canonical source — it wins for entries that exist in
+      // both. Local-only entries (not yet pushed) are preserved so nothing
+      // is lost when offline or without a token.
+      const remoteIds = new Set((remote.additions || []).map((r) => r.id));
+      const localOnly = (local.additions || []).filter((r) => !remoteIds.has(r.id));
+      setAdditions([...(remote.additions || []), ...localOnly]);
+      setOverrides({ ...(local.overrides || {}), ...(remote.overrides || {}) });
+      setCustomGames([...new Set([...(local.customGames || []), ...(remote.customGames || [])])]);
       setStorageReady(true);
     })();
   }, []);
