@@ -399,8 +399,11 @@ function SyncSettings({ onClose, onPull, onPush, additions, overrides }) {
               autoComplete="off"
             />
             <div style={{ fontSize: 12, color: T.graphiteSoft, marginTop: 8, lineHeight: 1.5 }}>
-              Create a fine-grained token at github.com/settings/personal-access-tokens with access limited to just
-              the <code>{GH_OWNER}/{GH_REPO}</code> repo and "Contents: Read and write" permission. It's stored only
+              <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer"
+                style={{ color: T.red, fontWeight: 700 }}>
+                Create a fine-grained token
+              </a> with access limited to just
+              the <code>{GH_OWNER}/{GH_REPO}</code> repo and <strong>"Contents: Read and write"</strong> permission. It's stored only
               in this browser (localStorage) and never leaves it except to call GitHub's API directly.
             </div>
 
