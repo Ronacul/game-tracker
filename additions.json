@@ -101,6 +101,51 @@
         "Lucanor"
       ],
       "notes": ""
+    },
+    {
+      "id": "add-1786769932215",
+      "seq": 1786769932215,
+      "date": "2026-08-14",
+      "game": "Boxcars UK",
+      "winners": [
+        "Lucanor"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor",
+        "Ian"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "add-1786810477378",
+      "seq": 1786810477378,
+      "date": "2026-08-14",
+      "game": "Munchkin 2e",
+      "winners": [
+        "Lucanor"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor",
+        "Ian"
+      ],
+      "notes": "First play"
+    },
+    {
+      "id": "add-1786810544977",
+      "seq": 1786810544977,
+      "date": "2026-08-14",
+      "game": "Jamb",
+      "winners": [
+        "Dennis"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor",
+        "Ian"
+      ],
+      "notes": ""
     }
   ],
   "overrides": {
@@ -119,5 +164,7 @@
       "notes": ""
     }
   },
-  "customGames": []
+  "customGames": [
+    "Munchkin 2e"
+  ]
 }
