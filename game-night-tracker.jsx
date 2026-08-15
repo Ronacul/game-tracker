@@ -1000,7 +1000,7 @@ const EXTERNAL_TRACKERS = {
 
 function GameDetail({ name, all }) {
   const rows = all.filter((r) => r.game === name);
-  const sorted = [...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(a) - seqOf(b)));
+  const sorted = [...rows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(b) - seqOf(a)));
   const isCoop = COOP_GAMES.has(name);
   const belt = !isCoop && sorted[0] ? sorted[0].winners.filter((w) => w !== "Win" && w !== "Loss") : [];
 
@@ -1071,7 +1071,7 @@ function History({ all, additions, overrides, persist, onEdit }) {
   const [csv, setCsv] = React.useState(null);
   const [copied, setCopied] = React.useState(false);
   const taRef = React.useRef(null);
-  const rows = [...all].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(a) - seqOf(b)));
+  const rows = [...all].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : seqOf(b) - seqOf(a)));
 
   const editedSeedRows = all.filter((r) => r.seed && r.edited);
   const pendingCount = additions.length + editedSeedRows.length;
