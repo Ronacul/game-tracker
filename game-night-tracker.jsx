@@ -358,6 +358,32 @@ function SyncSettings({ onClose, onPull, onPush, additions, overrides }) {
         </Card>
       )}
 
+      {/* What's new */}
+      <Card style={{ marginBottom: 12 }}>
+        <details>
+          <summary className="display" style={{ fontSize: 13, color: T.red, cursor: "pointer" }}>WHAT'S NEW</summary>
+          <div style={{ marginTop: 10 }}>
+            {[
+              ["Aug 15, 2026", "🔀 Reorder games within a night", "History rows for the same date now show ▲/▼ arrows to fix the play order if it was entered wrong."],
+              ["Aug 15, 2026", "📜 History ordering fix", "The log now shows the last game played on top globally — no more grouping by day with oldest-first within each night."],
+              ["Aug 9, 2026", "🐛 Midnight date fix", "Games played past midnight were landing on the wrong date. Fixed — Saturday night games stay on Saturday."],
+              ["Aug 9, 2026", "☁️ Sync improvements", "Local and remote data now merge instead of overwriting. Sync history log tracks push/pull activity."],
+              ["Jul 12, 2026", "🏆 Champ belts & Streaks tab", "New Streaks tab: active win streaks, all-time records, belt holders (current champ per game), cold streaks, and attendance stats."],
+              ["Jul 12, 2026", "🎯 Per-game stats", "Tap any game on the Games tab for a full breakdown — leaderboard, play history, and link to Rail Baron Tracker."],
+              ["Jul 12, 2026", "➕ Add new games", "Games tab has an 'add new game' button so custom games don't need seed data."],
+              ["Jul 12, 2026", "☁️ GitHub sync", "Publish your additions directly to the repo. Pull to load everyone's data. Token setup in ⚙ settings."],
+              ["Jul 12, 2026", "🎲 Launch", "Game Night Tracker goes live — 677 games imported from the spreadsheet (2015–2026). Scorepad, full history, and CSV export."],
+            ].map(([date, title, desc], i) => (
+              <div key={i} style={{ padding: "8px 0", borderBottom: i < 8 ? `1px solid ${T.line}` : "none", fontSize: 13, lineHeight: 1.5 }}>
+                <span className="mono" style={{ fontSize: 11, color: T.graphiteSoft }}>{date}</span>{" "}
+                <span style={{ fontWeight: 700 }}>{title}</span><br />
+                <span style={{ color: T.graphiteSoft, fontSize: 12 }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      </Card>
+
       {/* Token settings — collapsed by default */}
       <Card>
         <details>
