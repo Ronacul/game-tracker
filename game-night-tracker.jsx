@@ -262,14 +262,13 @@ function SyncSettings({ onClose, onPull, onPush, additions, overrides }) {
   async function doPush() {
     setSyncing(true);
     setSyncMsg("Pushing to GitHub…");
-    try {
-      await onPush();
+    const result = await onPush();
+    if (result && !result.ok) {
+      setSyncMsg("Push failed: " + result.error);
+    } else {
       setSyncMsg("✓ Pushed — published to GitHub");
-      setHistory(getSyncHistory());
-    } catch (e) {
-      setSyncMsg("Push failed: " + e.message);
-      setHistory(getSyncHistory());
     }
+    setHistory(getSyncHistory());
     setSyncing(false);
   }
 
@@ -542,7 +541,9 @@ function GameNightTracker() {
     } catch (e) {
       setSaveMsg("Saved on this device, but publishing failed: " + e.message);
       logSync("push-fail", e.message);
+      return { ok: false, error: e.message };
     }
+    return { ok: true };
   }
 
   async function pullFromGitHub() {
