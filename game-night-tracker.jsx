@@ -1084,6 +1084,30 @@ function History({ all, additions, overrides, persist, onEdit }) {
     }
   }
 
+  // Swap two rows within the same night by exchanging their seq values
+  async function swapOrder(idx) {
+    const a = rows[idx];
+    const b = rows[idx + 1];
+    if (!a || !b || a.date !== b.date) return;
+    const seqA = seqOf(a);
+    const seqB = seqOf(b);
+    const newOv = { ...overrides };
+    const newAdd = [...additions];
+    // Apply new seq to each row via override (seed) or direct mutation (addition)
+    [
+      [a, seqB],
+      [b, seqA],
+    ].forEach(([r, newSeq]) => {
+      if (r.seed) {
+        newOv[r.id] = { ...(newOv[r.id] || {}), seq: newSeq };
+      } else {
+        const i = newAdd.findIndex((x) => x.id === r.id);
+        if (i >= 0) newAdd[i] = { ...newAdd[i], seq: newSeq };
+      }
+    });
+    await persist({ additions: newAdd, overrides: newOv });
+  }
+
   function openCsv(which) {
     const data =
       which === "new"
@@ -1171,15 +1195,45 @@ function History({ all, additions, overrides, persist, onEdit }) {
       </Card>
       <Card>
         <div className="display" style={{ fontSize: 15, marginBottom: 12, color: T.red }}>THE LOG</div>
-        {rows.slice(0, shown).map((r) => (
+        {rows.slice(0, shown).map((r, i) => {
+          // Display is newest-first, so "move up" = move earlier in display = swap with i-1 (higher seq)
+          // "move down" = swap with i+1 (lower seq / earlier in the night)
+          const canUp = i > 0 && rows[i - 1].date === r.date;
+          const canDown = i < rows.length - 1 && rows[i + 1].date === r.date;
+          const hasSibling = canUp || canDown;
+          return (
           <div key={r.id} style={{ padding: "8px 0", borderBottom: `1px solid ${T.line}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <div>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{r.game}</span>
-                <span className="mono" style={{ fontSize: 11, color: T.graphiteSoft, marginLeft: 8 }}>
-                  {r.date}
-                  {r.edited && " · edited"}
-                </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {hasSibling && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0, flexShrink: 0 }}>
+                    <button
+                      onClick={() => swapOrder(i - 1)}
+                      disabled={!canUp}
+                      aria-label="Move up"
+                      style={{
+                        border: "none", background: "transparent", cursor: canUp ? "pointer" : "default",
+                        color: canUp ? T.graphiteSoft : T.line, fontSize: 11, lineHeight: 1, padding: "2px 4px",
+                      }}
+                    >▲</button>
+                    <button
+                      onClick={() => swapOrder(i)}
+                      disabled={!canDown}
+                      aria-label="Move down"
+                      style={{
+                        border: "none", background: "transparent", cursor: canDown ? "pointer" : "default",
+                        color: canDown ? T.graphiteSoft : T.line, fontSize: 11, lineHeight: 1, padding: "2px 4px",
+                      }}
+                    >▼</button>
+                  </div>
+                )}
+                <div>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{r.game}</span>
+                  <span className="mono" style={{ fontSize: 11, color: T.graphiteSoft, marginLeft: 8 }}>
+                    {r.date}
+                    {r.edited && " · edited"}
+                  </span>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
                 <button
@@ -1204,7 +1258,8 @@ function History({ all, additions, overrides, persist, onEdit }) {
             </div>
             {r.notes && <div style={{ fontSize: 12, fontStyle: "italic", color: T.graphiteSoft, marginTop: 2 }}>{r.notes}</div>}
           </div>
-        ))}
+          );
+        })}
         {shown < rows.length && (
           <button
             onClick={() => setShown(shown + 50)}
