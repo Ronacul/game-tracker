@@ -208,6 +208,22 @@
         "Martin"
       ],
       "notes": "First play"
+    },
+    {
+      "id": "add-1788789810051",
+      "seq": 1788789810051,
+      "date": "2026-09-06",
+      "game": "Annihilageddon",
+      "winners": [
+        "Mark"
+      ],
+      "players": [
+        "Lucanor",
+        "Ian",
+        "Mark",
+        "Dennis"
+      ],
+      "notes": ""
     }
   ],
   "overrides": {
