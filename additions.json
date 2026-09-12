@@ -224,6 +224,22 @@
         "Dennis"
       ],
       "notes": ""
+    },
+    {
+      "id": "add-1789234469589",
+      "seq": 1789234469589,
+      "date": "2026-09-11",
+      "game": "Boxcars UK",
+      "winners": [
+        "Ian"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor",
+        "Ian",
+        "Mark"
+      ],
+      "notes": "Epic last minute win, 6 on the 3ed die"
     }
   ],
   "overrides": {
