@@ -106,15 +106,14 @@
       "id": "add-1786769932215",
       "seq": 1786769932215,
       "date": "2026-08-14",
-      "game": "Jamb",
+      "game": "Boxcars UK",
       "winners": [
-        "Dennis"
+        "Lucanor"
       ],
       "players": [
         "Dennis",
         "Lucanor",
-        "Ian",
-        "Mark"
+        "Ian"
       ],
       "notes": ""
     },
@@ -241,6 +240,22 @@
         "Mark"
       ],
       "notes": "Epic last minute win, 6 on the 3ed die"
+    },
+    {
+      "id": "add-1789234530504",
+      "seq": 1789234530504,
+      "date": "2026-09-11",
+      "game": "Jamb",
+      "winners": [
+        "Dennis"
+      ],
+      "players": [
+        "Lucanor",
+        "Dennis",
+        "Ian",
+        "Mark"
+      ],
+      "notes": ""
     }
   ],
   "overrides": {
