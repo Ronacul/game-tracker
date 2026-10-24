@@ -334,6 +334,20 @@
         "Martin"
       ],
       "notes": ""
+    },
+    {
+      "id": "add-1792845185443",
+      "seq": 1792845185443,
+      "date": "2026-10-24",
+      "game": "Jamb",
+      "winners": [
+        "Dennis"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor"
+      ],
+      "notes": ""
     }
   ],
   "overrides": {
