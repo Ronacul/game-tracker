@@ -318,6 +318,22 @@
         "Ian"
       ],
       "notes": ""
+    },
+    {
+      "id": "add-1792845172463",
+      "seq": 1792845172463,
+      "date": "2026-10-23",
+      "game": "Boxcars UK",
+      "winners": [
+        "Lucanor"
+      ],
+      "players": [
+        "Dennis",
+        "Lucanor",
+        "Ian",
+        "Martin"
+      ],
+      "notes": ""
     }
   ],
   "overrides": {
