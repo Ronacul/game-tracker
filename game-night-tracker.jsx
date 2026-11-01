@@ -878,7 +878,7 @@ function Scorepad({ all, years }) {
             {year === "all" ? "ALL-TIME" : year} SCOREPAD
           </div>
           <a
-            href="https://ronacul.github.io/railbaron-tracker/rail-baron-tracker.html"
+            href="https://railbaron-tracker.pages.dev/"
             target="_blank"
             rel="noopener noreferrer"
             title="Open Rail Baron / Boxcars Tracker"
@@ -1025,7 +1025,7 @@ function GamesTab({ all, customGames, additions, persist }) {
 }
 
 const EXTERNAL_TRACKERS = {
-  "Rail Baron": "https://ronacul.github.io/railbaron-tracker/rail-baron-tracker.html",
+  "Rail Baron": "https://railbaron-tracker.pages.dev/",
 };
 
 function GameDetail({ name, all }) {
